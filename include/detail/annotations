@@ -1,0 +1,39 @@
+#pragma once
+
+namespace rqt {
+template <typename T>
+struct property {
+    using Type = T;
+    const char *name;
+};
+
+struct read {
+    const char *callback;
+};
+
+struct write {
+    const char *callback;
+};
+
+struct notify {
+    const char *callback;
+};
+
+struct signal {};
+struct invokable {};
+
+namespace detail {
+consteval auto is_property_annotation(std::meta::info r) {
+    auto expected = ^^rqt::property;
+    return has_template_arguments(type_of(r)) && template_of(type_of(r)) == ^^rqt::property;
+}
+
+consteval auto has_signal_annotation(std::meta::info r) {
+    return has_annotation<rqt::signal>(r);
+}
+
+consteval auto has_invokable_annotation(std::meta::info r) {
+    return has_annotation<rqt::invokable>(r);
+}
+}  // namespace detail
+}  // namespace rqt

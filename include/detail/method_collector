@@ -1,0 +1,75 @@
+#pragma once
+
+namespace rqt {
+namespace detail {
+struct method_arg {
+    std::string_view name;
+    std::variant<uint32_t, std::string_view> type;
+    QtPrivate::QMetaTypeInterface *meta_type;
+};
+
+template <typename Callable, typename Args>
+struct method {
+    using Helper = QtPrivate::FunctionPointer<Callable>;
+
+    std::string_view name;
+    Callable callback;
+    uint32_t flags;
+    Args args;
+    std::variant<uint32_t, std::string_view> type;
+    QtPrivate::QMetaTypeInterface *meta_type;
+
+    template <typename T>
+    void call(T *_o, void **_a) {
+        Helper::template call<typename Helper::Arguments, typename Helper::ReturnType>(callback, _o, _a);
+    }
+};
+
+template <typename Callable>
+consteval auto methods_of(std::meta::info r, Callable has_annotation) {
+    return get_public_members(r)
+         | std::views::filter(std::meta::is_function)
+         | std::views::filter(has_annotation)
+         | std::ranges::to<std::vector>();
+}
+
+template <auto type>
+constexpr auto build_method_type() {
+    if constexpr (QMetaTypeId2<[:type:]>::Defined) {
+        return static_cast<uint32_t>(qMetaTypeId<[:type:]>());
+    } else {
+        return identifier_of(type);
+    }
+}
+
+template <auto fn>
+constexpr auto build_method_args(bool force_complete) {
+    return transform(
+        []<auto arg> {
+            return method_arg{
+                has_consistent_identifier(arg) ? identifier_of(arg) : "", build_method_type<type_of(arg)>(), nullptr};
+        },
+        [&]() { return parameters_of(fn); });
+}
+
+template <auto fn>
+constexpr auto build_method(uint32_t flags, bool force_complete) {
+    return method{
+        identifier_of(fn),
+        &[:fn:], flags, build_method_args<fn>(force_complete), build_method_type<return_type_of(fn)>(), nullptr};
+}
+}  // namespace detail
+
+template <typename T>
+struct method_collector {
+    static constexpr auto signal_list = detail::transform(
+        []<auto fn> { return detail::build_method<fn>(0x06, true); },
+        []() { return detail::methods_of(^^T, detail::has_signal_annotation); });
+
+    static constexpr auto invokable_list = detail::transform(
+        []<auto fn> { return detail::build_method<fn>(0x02, false); },
+        []() { return detail::methods_of(^^T, detail::has_invokable_annotation); });
+
+    static constexpr auto method_list = std::tuple_cat(signal_list, invokable_list);
+};
+}  // namespace rqt

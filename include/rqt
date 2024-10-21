@@ -1,0 +1,18 @@
+#pragma once
+
+// Common dependencies
+#include <QtCore/QtCore>
+#include <experimental/meta>
+
+#include "detail/helpers"
+
+// Property (and macro) related
+#include "detail/annotations"
+#include "detail/macros"
+
+// meta_object dependencies
+#include "detail/method_collector"
+#include "detail/property_collector"
+
+// meta_object implementation
+#include "detail/meta_object"

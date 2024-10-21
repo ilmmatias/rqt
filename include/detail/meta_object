@@ -1,0 +1,181 @@
+#pragma once
+
+namespace rqt {
+template <typename T>
+struct meta_object {
+    static constexpr auto name = identifier_of(^^T);
+
+    static constexpr auto signal_list = method_collector<T>::signal_list;
+    static constexpr auto signal_count = std::tuple_size_v<decltype(signal_list)>;
+
+    static constexpr auto method_list = method_collector<T>::method_list;
+    static constexpr auto method_count = std::tuple_size_v<decltype(method_list)>;
+
+    static constexpr auto property_list = property_collector<T>::property_list;
+    static constexpr auto property_count = std::tuple_size_v<decltype(property_list)>;
+
+    static std::vector<std::string_view> strings;
+    static std::vector<uint8_t> string_data;
+    static std::vector<uint32_t> int_data;
+    static std::vector<QtPrivate::QMetaTypeInterface *> meta_data;
+
+    template <typename Notify, typename... Args>
+    static void activate_notify_handler(QObject *sender, const QMetaObject *meta, Notify notify, Args... args) {
+        if constexpr (sizeof...(Args) == 0) {
+            QMetaObject::activate(sender, meta, get_notify_index(notify), nullptr);
+        } else {
+            void *_a[]{nullptr, &args...};
+            QMetaObject::activate(sender, meta, get_notify_index(notify), _a);
+        }
+    }
+
+    static auto get_string_data() {
+        if (int_data.empty()) build_int_data();
+        if (string_data.empty()) build_string_data();
+        return reinterpret_cast<uint32_t *>(string_data.data());
+    }
+
+    static auto get_int_data() {
+        if (int_data.empty()) build_int_data();
+        return int_data.data();
+    }
+
+    static auto get_meta_data() {
+        if (int_data.empty()) build_int_data();
+        return meta_data.data();
+    }
+
+   private:
+    template <typename Notify>
+    static auto get_notify_index(Notify notify) {
+        if constexpr (std::is_same_v<Notify, std::monostate>) return 0;
+
+        auto _id_v = -1;
+        auto _id = [&](auto id) mutable { _id_v = id; };
+        auto _cid = [_cid_v = 0]() mutable { return _cid_v++; };
+
+        detail::for_each(
+            [&](auto prop) {
+                auto id = _cid();
+                if constexpr (std::is_same_v<decltype(prop.callback), Notify>) {
+                    if (std::is_same_v<decltype(prop.callback), Notify> && prop.callback == notify) _id(id);
+                }
+            },
+            signal_list);
+
+        return _id_v == -1 ? 0 : static_cast<uint32_t>(_id_v);
+    }
+
+    static auto add_string(const auto &str) {
+        if (auto pos = std::find(strings.begin(), strings.end(), str); pos != strings.end()) {
+            return static_cast<uint32_t>(pos - strings.begin());
+        } else {
+            strings.push_back(str);
+            return static_cast<uint32_t>(strings.size() - 1);
+        }
+    }
+
+    static auto add_int_data(const std::vector<uint32_t> &data) {
+        int_data.insert(int_data.end(), data.begin(), data.end());
+    }
+
+    static auto add_meta_data(const auto &type) {
+        meta_data.push_back(type);
+        return static_cast<uint32_t>(meta_data.size() - 1);
+    }
+
+    static void add_type(const auto &type) {
+        if (std::holds_alternative<uint32_t>(type)) {
+            add_int_data({std::get<uint32_t>(type)});
+        } else {
+            add_int_data({add_string(std::get<std::string_view>(type)) | 0x80000000});
+        }
+    }
+
+    static void build_int_data() {
+        const uint32_t method_offset = 14;
+        const uint32_t property_offset = method_offset + method_count * 6;
+        const uint32_t property_end = property_offset + property_count * 5;
+
+        auto update_offset = [offset = property_end](auto amount) mutable {
+            offset += amount;
+            return offset - amount;
+        };
+
+        add_string(name);
+        add_string("");
+
+        add_int_data({
+            12,                                    // revision
+            0,                                     // classname
+            0,                                     // classinfo count
+            0,                                     // classinfo offset
+            method_count,                          // method count
+            method_count ? method_offset : 0,      // method offset
+            property_count,                        // property count
+            property_count ? property_offset : 0,  // property offset
+            0,                                     // enum count
+            0,                                     // enum offset
+            0,                                     // constructor count
+            0,                                     // constructor offset
+            0,                                     // flags
+            signal_count,                          // signal count
+        });
+
+        detail::for_each([&](auto prop) { add_meta_data(prop.meta_type); }, property_list);
+
+        detail::for_each(
+            [&](auto method) {
+                auto arg_count = static_cast<uint32_t>(std::tuple_size_v<decltype(method.args)>);
+                add_int_data(
+                    {add_string(method.name),
+                     arg_count,
+                     update_offset(arg_count * 2 + 1),
+                     2,
+                     method.flags,
+                     add_meta_data(method.meta_type)});
+                detail::for_each([&](auto arg) { add_meta_data(arg.meta_type); }, method.args);
+            },
+            method_list);
+
+        detail::for_each(
+            [&](auto prop) {
+                add_int_data({add_string(prop.name)});
+                add_type(prop.type);
+                add_int_data({prop.flags, get_notify_index(prop.notify_callback), 0});
+            },
+            property_list);
+
+        detail::for_each(
+            [&](auto method) {
+                add_type(method.type);
+                detail::for_each([&](auto arg) { add_type(arg.type); }, method.args);
+                detail::for_each([&](auto arg) { add_int_data({add_string(arg.name)}); }, method.args);
+            },
+            method_list);
+
+        add_int_data({0});
+    }
+
+    static void build_string_data() {
+        std::vector<uint32_t> offsets_and_sizes;
+        std::vector<uint8_t> binary_data;
+
+        const auto offset = strings.size() * 2 * sizeof(uint32_t);
+
+        for (auto &str : strings) {
+            offsets_and_sizes.push_back(static_cast<uint32_t>(offset + binary_data.size()));
+            offsets_and_sizes.push_back(static_cast<uint32_t>(str.size()));
+            binary_data.insert(binary_data.end(), str.begin(), str.end());
+            binary_data.push_back(0);
+        };
+
+        for (auto data : offsets_and_sizes) {
+            auto bytes = std::bit_cast<std::array<uint8_t, sizeof(uint32_t)>>(data);
+            string_data.insert(string_data.end(), bytes.begin(), bytes.end());
+        }
+
+        string_data.insert(string_data.end(), binary_data.begin(), binary_data.end());
+    }
+};
+}  // namespace rqt

@@ -1,0 +1,51 @@
+#pragma once
+
+namespace rqt {
+namespace detail {
+template <typename T>
+consteval auto annotation_of(std::meta::info r) -> std::optional<T> {
+    for (auto a : annotations_of(r)) {
+        if (type_of(a) == ^^T) return extract<T>(a);
+    }
+    return {};
+}
+
+template <typename Callable, typename... Args>
+constexpr void for_each(Callable callback, std::tuple<Args...> tuple) {
+    std::apply([&](Args... items) { (callback(items), ...); }, tuple);
+}
+
+template <typename Callable, typename Generator>
+constexpr void for_each(Callable callback, Generator generator) {
+    [&]<size_t... N>(std::index_sequence<N...>) {
+        (callback.template operator()<generator()[N]>(), ...);
+    }(std::make_index_sequence<generator().size()>());
+}
+
+consteval auto get_public_method(std::meta::info r, std::string_view name) -> std::optional<std::meta::info> {
+    for (auto m : get_public_members(r)) {
+        if (!is_special_member_function(m) && identifier_of(m) == name) return m;
+    }
+    return {};
+}
+
+template <typename T>
+consteval auto has_annotation(std::meta::info r) {
+    return std::ranges::any_of(annotations_of(r), [&](auto a) { return type_of(a) == ^^T; });
+}
+
+consteval auto method_of(std::meta::info r, std::string_view name) -> std::optional<std::meta::info> {
+    for (auto m : members_of(r)) {
+        if (!is_special_member_function(m) && identifier_of(m) == name) return m;
+    }
+    return {};
+}
+
+template <typename Callable, typename Generator>
+constexpr auto transform(Callable callback, Generator generator) {
+    return [&]<size_t... N>(std::index_sequence<N...>) {
+        return std::tuple { callback.template operator()<generator()[N]>()... };
+    }(std::make_index_sequence<generator().size()>());
+}
+}  // namespace detail
+}  // namespace rqt

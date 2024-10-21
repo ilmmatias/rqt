@@ -1,0 +1,96 @@
+#pragma once
+
+namespace rqt {
+namespace detail {
+template <typename Read, typename Write, typename Notify>
+struct property {
+    std::string_view name;
+    std::variant<uint32_t, std::string_view> type;
+    QtPrivate::QMetaTypeInterface *meta_type;
+    Read read_callback;
+    Write write_callback;
+    Notify notify_callback;
+    uint32_t flags;
+
+    template <typename T>
+        requires(std::is_same_v<Read, std::monostate>)
+    void read(T *_o, void **_a) {
+    }
+
+    template <typename T>
+        requires(!std::is_same_v<Read, std::monostate>)
+    void read(T *_o, void **_a) {
+        using Helper = QtPrivate::FunctionPointer<Read>;
+        Helper::template call<typename Helper::Arguments, typename Helper::ReturnType>(read_callback, _o, _a);
+    }
+
+    template <typename T>
+        requires(std::is_same_v<Write, std::monostate>)
+    void write(T *_o, void **_a) {
+    }
+
+    template <typename T>
+        requires(!std::is_same_v<Write, std::monostate>)
+    void write(T *_o, void **_a) {
+        using Helper = QtPrivate::FunctionPointer<Write>;
+        Helper::template call<typename Helper::Arguments, typename Helper::ReturnType>(write_callback, _o, _a);
+    }
+};
+
+consteval auto properties_of(std::meta::info r) {
+    return static_data_members_of(r) | std::views::filter(is_property_annotation) | std::ranges::to<std::vector>();
+}
+
+consteval auto get_signal_of(std::meta::info r, std::string_view name) -> std::optional<std::meta::info> {
+    for (auto m : get_public_members(r) | std::views::filter(has_signal_annotation)) {
+        if (!is_special_member_function(m) && identifier_of(m) == name) return m;
+    }
+    return {};
+}
+
+template <typename T, typename Kind, auto prop>
+constexpr auto build_property_callback() {
+    constexpr auto annot = annotation_of<Kind>(prop);
+    if constexpr (!annot || !get_signal_of(^^T, annot.value().callback))
+        return std::monostate{};
+    else
+        return &[:get_signal_of(^^T, annot.value().callback).value():];
+}
+
+template <auto type>
+constexpr auto build_property_type() {
+    if constexpr (QMetaTypeId2<[:type:]>::Defined) {
+        return static_cast<uint32_t>(qMetaTypeId<[:type:]>());
+    } else {
+        return identifier_of(type);
+    }
+}
+
+template <typename T, typename Read, typename Write, typename Notify>
+constexpr auto build_property_flags() {
+    auto flags = 0x15000;
+    if (!std::is_same_v<Read, std::monostate>) flags |= 0x01;
+    if (!std::is_same_v<Write, std::monostate>) flags |= 0x102;
+    if (!QMetaTypeId2<T>::Defined) flags |= 0x08;
+    return flags;
+}
+
+template <typename T, auto prop>
+constexpr auto build_property() {
+    using Type = typename[:type_of(prop):]::Type;
+    constexpr auto type = build_property_type<^^Type>();
+    constexpr auto read = build_property_callback<T, rqt::read, prop>();
+    constexpr auto write = build_property_callback<T, rqt::write, prop>();
+    constexpr auto notify = build_property_callback<T, rqt::notify, prop>();
+    constexpr auto flags = build_property_flags<Type, decltype(read), decltype(write), decltype(notify)>();
+    return property{[:prop:].name, type, nullptr, read, write, notify, flags};
+}
+}  // namespace detail
+
+template <typename T>
+struct property_collector {
+    static constexpr auto property_list = detail::transform(
+        []<auto prop> { return detail::build_property<T, prop>(); },
+        []() { return detail::properties_of(^^T); });
+};
+}  // namespace rqt

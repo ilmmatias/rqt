@@ -1,0 +1,117 @@
+#pragma once
+
+#define R_OBJECT Q_OBJECT
+
+#define R_OBJECT_IMPL(CLASS)                                                                                      \
+    template <>                                                                                                   \
+    std::vector<std::string_view> rqt::meta_object<CLASS>::strings{};                                             \
+    template <>                                                                                                   \
+    std::vector<uint8_t> rqt::meta_object<CLASS>::string_data{};                                                  \
+    template <>                                                                                                   \
+    std::vector<uint32_t> rqt::meta_object<CLASS>::int_data{};                                                    \
+    template <>                                                                                                   \
+    std::vector<QtPrivate::QMetaTypeInterface *> rqt::meta_object<CLASS>::meta_data{};                            \
+                                                                                                                  \
+    const QMetaObject CLASS::staticMetaObject = {{                                                                \
+        QMetaObject::SuperData::link<QObject::staticMetaObject>(),                                                \
+        rqt::meta_object<CLASS>::get_string_data(),                                                               \
+        rqt::meta_object<CLASS>::get_int_data(),                                                                  \
+        qt_static_metacall,                                                                                       \
+        nullptr,                                                                                                  \
+        rqt::meta_object<CLASS>::get_meta_data(),                                                                 \
+        nullptr,                                                                                                  \
+    }};                                                                                                           \
+                                                                                                                  \
+    const QMetaObject *CLASS::metaObject() const {                                                                \
+        return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;              \
+    }                                                                                                             \
+                                                                                                                  \
+    void *CLASS::qt_metacast(const char *_clname) {                                                               \
+        if (!_clname) return nullptr;                                                                             \
+        if (rqt::meta_object<CLASS>::name == _clname) return static_cast<void *>(this);                           \
+        return QObject::qt_metacast(_clname);                                                                     \
+    }                                                                                                             \
+                                                                                                                  \
+    int CLASS::qt_metacall(QMetaObject::Call _c, int _id, void **_a) {                                            \
+        _id = QObject::qt_metacall(_c, _id, _a);                                                                  \
+        if (_id < 0) {                                                                                            \
+            return _id;                                                                                           \
+        } else if (_c == QMetaObject::InvokeMetaMethod) {                                                         \
+            if (_id < rqt::meta_object<CLASS>::method_count) qt_static_metacall(this, _c, _id, _a);               \
+            _id -= rqt::meta_object<CLASS>::method_count;                                                         \
+        } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {                                           \
+            if (_id < rqt::meta_object<CLASS>::method_count) *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType(); \
+            _id -= rqt::meta_object<CLASS>::method_count;                                                         \
+        } else if (                                                                                               \
+            _c == QMetaObject::ReadProperty                                                                       \
+            || _c == QMetaObject::WriteProperty                                                                   \
+            || _c == QMetaObject::ResetProperty                                                                   \
+            || _c == QMetaObject::BindableProperty                                                                \
+            || _c == QMetaObject::RegisterPropertyMetaType) {                                                     \
+            qt_static_metacall(this, _c, _id, _a);                                                                \
+            _id -= rqt::meta_object<CLASS>::property_count;                                                       \
+        }                                                                                                         \
+        return _id;                                                                                               \
+    }                                                                                                             \
+                                                                                                                  \
+    void CLASS::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a) {                       \
+        auto *_t = static_cast<CLASS *>(_o);                                                                      \
+        auto _get_cid = [_cid = 0]() mutable { return _cid++; };                                                  \
+        if (_c == QMetaObject::InvokeMetaMethod) {                                                                \
+            rqt::detail::for_each(                                                                                \
+                [&](auto fn) {                                                                                    \
+                    if (_get_cid() == _id) fn.call(_t, _a);                                                       \
+                },                                                                                                \
+                rqt::meta_object<CLASS>::method_list);                                                            \
+        } else if (_c == QMetaObject::IndexOfMethod) {                                                            \
+            rqt::detail::for_each(                                                                                \
+                [&](auto fn) {                                                                                    \
+                    auto _cid = _get_cid();                                                                       \
+                    if (fn.callback == *reinterpret_cast<decltype(fn.callback) *>(_a[1])) {                       \
+                        *reinterpret_cast<int *>(_a[0]) = _cid;                                                   \
+                    }                                                                                             \
+                },                                                                                                \
+                rqt::meta_object<CLASS>::signal_list);                                                            \
+        } else if (_c == QMetaObject::ReadProperty) {                                                             \
+            rqt::detail::for_each(                                                                                \
+                [&](auto prop) {                                                                                  \
+                    if (_get_cid() == _id) prop.read(_t, _a);                                                     \
+                },                                                                                                \
+                rqt::meta_object<CLASS>::property_list);                                                          \
+        } else if (_c == QMetaObject::WriteProperty) {                                                            \
+            rqt::detail::for_each(                                                                                \
+                [&](auto prop) {                                                                                  \
+                    if (_get_cid() == _id) prop.write(_t, _a);                                                    \
+                },                                                                                                \
+                rqt::meta_object<CLASS>::property_list);                                                          \
+        } else if (_c == QMetaObject::ResetProperty) {                                                            \
+        } else if (_c == QMetaObject::BindableProperty) {                                                         \
+        }                                                                                                         \
+    }
+
+#define R_SIGNAL_IMPL(CLASS, SIGNAL, ...) \
+    rqt::meta_object<CLASS>::activate_notify_handler(this, &staticMetaObject, &CLASS::SIGNAL, #__VA_ARGS__)
+
+#define R_DERIVE_EXPAND_0(...) R_DERIVE_EXPAND_1(R_DERIVE_EXPAND_1(__VA_ARGS__))
+#define R_DERIVE_EXPAND_1(...) R_DERIVE_EXPAND_2(R_DERIVE_EXPAND_2(__VA_ARGS__))
+#define R_DERIVE_EXPAND_2(...) R_DERIVE_EXPAND_3(R_DERIVE_EXPAND_3(__VA_ARGS__))
+#define R_DERIVE_EXPAND_3(...) R_DERIVE_EXPAND_4(R_DERIVE_EXPAND_4(__VA_ARGS__))
+#define R_DERIVE_EXPAND_4(...) R_DERIVE_EXPAND_5(R_DERIVE_EXPAND_5(__VA_ARGS__))
+#define R_DERIVE_EXPAND_5(...) __VA_ARGS__
+
+#define R_DERIVE_RECURSE_NAME() R_DERIVE_RECURSE
+#define R_DERIVE_RECURSE_CALL ()
+
+#define R_DERIVE_RECURSE(NAME, ...) =rqt::NAME __VA_OPT__(, R_DERIVE_RECURSE_NAME R_DERIVE_RECURSE_CALL (__VA_ARGS__))
+
+#define R_PROPERTY(TYPE, NAME, ...)                                                                       \
+    static constexpr __VA_OPT__([[R_DERIVE_EXPAND_0(R_DERIVE_RECURSE(__VA_ARGS__))]]) rqt::property<TYPE> \
+        qt_property_##NAME{#NAME};
+
+#define R_READ(CALLBACK) read(#CALLBACK)
+#define R_WRITE(CALLBACK) write(#CALLBACK)
+#define R_NOTIFY(CALLBACK) notify(#CALLBACK)
+
+#define R_SIGNAL [[=rqt::signal()]]
+#define R_INVOKABLE [[=rqt::invokable()]]
+#define R_SLOT [[=rqt::invokable()]]
